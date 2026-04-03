@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HEATmap — Houston Ecosystem Analytics</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    /* ── TOKENS — City of Houston Official Color Palette ────────────── */
+    :root {
+      /* Houston backgrounds — deep Houston-blue-black */
+      --bg:          #060c18;
+      --sidebar-bg:  #03070f;
+      --card:        rgba(56,77,156,0.09);
+      --card-border: rgba(56,77,156,0.28);
+      --card-hover:  rgba(56,77,156,0.16);
+      --text:        #f0f4ff;
+      --muted:       #5a718a;
+      --subtle:      rgba(56,77,156,0.12);
+
+      /* ── City of Houston Official Colors ── */
+      --h-blue:      #384D9C;   /* Houston flag blue              */
+      --h-blue-lt:   #5B75C8;   /* lightened for dark backgrounds */
+      --h-yellow:    #FBD028;   /* Houston flag yellow            */
+      --h-red:       #CC2000;   /* Houston red (from #B30000)     */
+      --h-magenta:   #B84880;   /* Houston magenta (from #8A3860) */
+      --h-subblue:   #6670D4;   /* Houston sub-blue (from #4846AA)*/
+      --h-gold:      #C8882A;   /* Houston gold (from #74522F)    */
+
+      /* UI chrome — Houston Blue as primary accent */
+      --accent:      var(--h-blue-lt);
+      --accent-dim:  rgba(91,117,200,0.15);
+
+      /* semantic data colors */
+      --green:       #34d399;
+      --slate:       #475569;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      /* Houston Blue top-left glow, Houston Yellow bottom-right warmth */
+      background-image:
+        radial-gradient(ellipse 75% 55% at 0% 0%,    rgba(56,77,156,0.12)  0%, transparent 55%),
+        radial-gradient(ellipse 50% 40% at 100% 100%, rgba(251,208,40,0.06) 0%, transparent 50%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── PANEL ANIMATION ─────────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .panel { display: none; }
+    .panel.active {
+      display: block;
+      animation: fadeUp 0.24s ease forwards;
+    }
+
+    /* ── APP SHELL ───────────────────────────────────────────────────── */
+    .app-shell {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── SIDEBAR ─────────────────────────────────────────────────────── */
+    .sidebar {
+      width: 232px;
+      min-height: 100vh;
+      background: var(--sidebar-bg);
+      border-right: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      z-index: 200;
+      flex-shrink: 0;
+    }
+
+    .sidebar-logo {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .logo-mark {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, var(--h-blue), var(--h-yellow));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 900; color: #fff;
+      box-shadow: 0 0 20px rgba(56,77,156,0.5);
+      margin-bottom: 12px;
+    }
+    .logo-name {
+      font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.4px;
+    }
+    .logo-name span { color: var(--h-yellow); }
+    .logo-sub {
+      font-size: 10px; color: var(--muted); margin-top: 2px;
+      letter-spacing: 0.02em;
+    }
+
+    .sidebar-section-label {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted);
+      padding: 20px 20px 8px;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 4px 10px;
+      overflow-y: auto;
+    }
+
+    .nav-item {
+      width: 100%;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      border: none; background: none; cursor: pointer;
+      border-radius: 9px; margin-bottom: 2px;
+      color: var(--muted); text-align: left;
+      transition: background 0.16s, color 0.16s;
+      position: relative;
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+    .nav-item.active {
+      background: rgba(251,208,40,0.10);
+      color: #fff;
+    }
+    .nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: -10px; top: 25%; bottom: 25%;
+      width: 3px;
+      background: var(--h-yellow);
+      border-radius: 0 3px 3px 0;
+      box-shadow: 0 0 10px rgba(251,208,40,0.6);
+    }
+    .nav-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      transition: box-shadow 0.16s;
+    }
+    .nav-item.active .nav-dot { box-shadow: 0 0 7px currentColor; }
+    .nav-label { flex: 1; font-size: 13px; font-weight: 500; white-space: nowrap; }
+    .nav-score {
+      font-size: 13px; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      padding: 2px 7px; border-radius: 6px;
+      background: rgba(255,255,255,0.07);
+    }
+    .nav-item.active .nav-score { background: rgba(251,208,40,0.15); color: var(--h-yellow); }
+
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .sidebar-badge {
+      font-size: 10px; font-weight: 600;
+      padding: 4px 10px; border-radius: 20px;
+      display: inline-block; margin-bottom: 5px;
+    }
+    .badge-mock { background: rgba(251,208,40,0.12); color: var(--h-yellow); border: 1px solid rgba(251,208,40,0.25); }
+    .badge-date { background: rgba(56,77,156,0.18); color: var(--h-blue-lt); border: 1px solid rgba(91,117,200,0.3); font-size: 10px; padding: 4px 10px; border-radius: 20px; display: inline-block; }
+
+    /* ── CONTENT AREA ────────────────────────────────────────────────── */
+    .content-area {
+      margin-left: 232px;
+      flex: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .content-header {
+      padding: 20px 32px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: flex-end; justify-content: space-between;
+    }
+    .content-header h2 {
+      font-size: 22px; font-weight: 800;
+      letter-spacing: -0.5px; color: #fff;
+    }
+    .content-header p {
+      font-size: 12px; color: var(--muted); margin-top: 3px;
+    }
+    .header-score-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(56,77,156,0.20);
+      border: 1px solid rgba(91,117,200,0.35);
+      border-radius: 12px;
+      padding: 8px 16px;
+    }
+    .header-score-chip .chip-label { font-size: 11px; color: var(--h-blue-lt); font-weight: 600; }
+    .header-score-chip .chip-value { font-size: 22px; font-weight: 900; color: var(--h-yellow); letter-spacing: -1px; text-shadow: 0 0 20px rgba(251,208,40,0.4); }
+
+    main {
+      max-width: 1200px;
+      padding: 28px 32px 56px;
+    }
+
+    /* ── SECTION TITLES ──────────────────────────────────────────────── */
+    .section-title {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px; margin-top: 28px;
+    }
+    .section-title:first-child { margin-top: 0; }
+
+    /* ── KPI CARDS ───────────────────────────────────────────────────── */
+    .kpi-row { display: grid; gap: 12px; margin-bottom: 18px; }
+    .kpi-row-3 { grid-template-columns: repeat(3,1fr); }
+    .kpi-row-4 { grid-template-columns: repeat(4,1fr); }
+
+    .kpi-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px 22px 18px;
+      position: relative; overflow: hidden;
+      transition: background 0.18s, border-color 0.18s, transform 0.2s;
+    }
+    .kpi-card:hover {
+      background: var(--card-hover);
+      border-color: rgba(255,255,255,0.14);
+      transform: translateY(-1px);
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: var(--top-line, linear-gradient(90deg, rgba(168,85,247,0.8), transparent));
+    }
+    .kpi-label {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 10px;
+    }
+    .kpi-value {
+      font-size: 38px; font-weight: 900;
+      letter-spacing: -2px; line-height: 1; color: #fff;
+    }
+    /* Houston-colored KPI values */
+    .kpi-value.c-blue   { color: var(--h-blue-lt); text-shadow: 0 0 28px rgba(91,117,200,0.45); }
+    .kpi-value.c-green  { color: var(--green);     text-shadow: 0 0 28px rgba(52,211,153,0.40); }
+    .kpi-value.c-violet { color: var(--h-subblue); text-shadow: 0 0 28px rgba(102,112,212,0.45); }
+    .kpi-value.c-amber  { color: var(--h-yellow);  text-shadow: 0 0 28px rgba(251,208,40,0.45); }
+    .kpi-value.c-orange { color: var(--h-magenta); text-shadow: 0 0 28px rgba(184,72,128,0.45); }
+    .kpi-sub  { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .kpi-trend {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 8px; border-radius: 20px; margin-top: 6px;
+    }
+    .kpi-trend.up   { color: var(--green); background: rgba(52,211,153,0.10); }
+    .kpi-trend.down { color: var(--red);   background: rgba(248,113,113,0.10); }
+
+    /* ── CHART CARDS ─────────────────────────────────────────────────── */
+    .charts-row { display: grid; gap: 12px; margin-bottom: 12px; }
+    .c2 { grid-template-columns: 1fr 1fr; }
+    .c12 { grid-template-columns: 1fr 2fr; }
+    .c21 { grid-template-columns: 2fr 1fr; }
+
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      transition: border-color 0.18s;
+    }
+    .chart-card:hover { border-color: rgba(255,255,255,0.13); }
+    .chart-card-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .chart-card-sub   { font-size: 11px; color: var(--muted); margin-bottom: 18px; }
+    .chart-wrap { position: relative; }
+    .chart-wrap canvas { width: 100% !important; }
+
+    /* ── EXECUTIVE PANEL ─────────────────────────────────────────────── */
+    .exec-hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .score-card {
+      grid-column: 1;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 28px 24px;
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; position: relative; overflow: hidden;
+    }
+    .score-card::after {
+      content: '';
+      position: absolute; top: -60px; left: 50%; transform: translateX(-50%);
+      width: 200px; height: 200px;
+      background: radial-gradient(circle, rgba(251,208,40,0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .gauge-wrap {
+      position: relative; width: 160px; height: 98px; margin-bottom: 8px;
+    }
+    .gauge-wrap canvas { position: absolute; top: 0; left: 0; }
+    .gauge-num-overlay {
+      position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+    }
+    .score-num {
+      font-size: 50px; font-weight: 900; letter-spacing: -3px;
+      line-height: 1;
+      background: linear-gradient(135deg, #FBD028, #FFE878, #FBD028);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 22px rgba(251,208,40,0.55));
+    }
+    .score-lbl {
+      font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted); margin-top: 2px;
+    }
+    .score-delta {
+      margin-top: 12px; font-size: 13px; font-weight: 700;
+      color: var(--green); display: flex; align-items: center; gap: 5px;
+    }
+    .score-caption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .pillars-card {
+      grid-column: 2 / span 2;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 22px 26px;
+      display: flex; flex-direction: column; gap: 18px; justify-content: center;
+    }
+    .pillar-row { display: flex; align-items: center; gap: 14px; }
+    .pillar-name { font-size: 13px; font-weight: 500; width: 155px; flex-shrink: 0; }
+    .pillar-track {
+      flex: 1; height: 6px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 10px; overflow: hidden;
+    }
+    .pillar-fill {
+      height: 100%; border-radius: 10px;
+      transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
+    }
+    .pillar-num {
+      font-size: 17px; font-weight: 800;
+      width: 44px; text-align: right; flex-shrink: 0;
+    }
+    .pillar-tag {
+      font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+      text-transform: uppercase; width: 56px; text-align: center;
+      padding: 3px 0; border-radius: 20px; flex-shrink: 0;
+    }
+    .tag-good { background: rgba(52,211,153,0.12);  color: var(--green); }
+    .tag-fair { background: rgba(251,191,36,0.12);  color: var(--amber); }
+    .tag-low  { background: rgba(248,113,113,0.12); color: var(--red); }
+
+    /* ── PROGRESS BARS ───────────────────────────────────────────────── */
+    .progress-list { display: flex; flex-direction: column; gap: 14px; }
+    .prog-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+    .prog-name { font-size: 12px; color: var(--text); }
+    .prog-val  { font-size: 12px; font-weight: 700; color: var(--h-yellow); }
+    .prog-track { height: 5px; background: rgba(56,77,156,0.2); border-radius: 10px; overflow: hidden; }
+    .prog-fill  { height: 100%; border-radius: 10px;
+                  background: linear-gradient(90deg, var(--h-blue), var(--h-blue-lt)); }
+
+    /* ── LEADER TABLE ────────────────────────────────────────────────── */
+    .ldr-table { width: 100%; border-collapse: collapse; }
+    .ldr-table th {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--muted);
+      padding: 0 0 10px; text-align: left;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .ldr-table th:not(:first-child) { text-align: right; }
+    .ldr-table td {
+      font-size: 13px; color: var(--text);
+      padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .ldr-table td:not(:first-child) { text-align: right; }
+    .ldr-table tr:last-child td { border-bottom: none; }
+    .ldr-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .ldr-rank { font-size: 11px; font-weight: 700; color: var(--muted); margin-right: 8px; }
+    .s-tag {
+      font-size: 10px; font-weight: 700; padding: 2px 7px;
+      border-radius: 8px; margin-left: 6px;
+    }
+    .s-cleantech { background: rgba(52,211,153,0.12);  color: var(--green); }
+    .s-biotech   { background: rgba(192,132,252,0.12); color: var(--purple); }
+    .s-software  { background: rgba(56,189,248,0.12);  color: var(--blue); }
+    .s-hardware  { background: rgba(251,146,60,0.12);  color: var(--orange); }
+
+    /* ── FUND LIST ───────────────────────────────────────────────────── */
+    .fund-list { display: flex; flex-direction: column; gap: 7px; margin-top: 4px; }
+    .fund-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 9px;
+      transition: background 0.16s, border-color 0.16s;
+    }
+    .fund-row:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.12); }
+    .fund-name  { font-size: 13px; font-weight: 600; color: var(--text); }
+    .fund-focus { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .fund-amt   { font-size: 16px; font-weight: 800; color: var(--green);
+                  text-shadow: 0 0 14px rgba(52,211,153,0.35); }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────────────── */
+    @media (max-width: 1024px) {
+      .sidebar { width: 60px; }
+      .nav-label, .nav-score, .logo-name, .logo-sub,
+      .sidebar-section-label, .sidebar-footer .badge-date { display: none; }
+      .logo-mark { margin-bottom: 0; }
+      .content-area { margin-left: 60px; }
+      .exec-hero { grid-template-columns: 1fr 1fr; }
+      .pillars-card { grid-column: 1 / span 2; }
+    }
+    @media (max-width: 768px) {
+      .exec-hero, .c2, .c12, .c21 { grid-template-columns: 1fr; }
+      .kpi-row-4 { grid-template-columns: repeat(2,1fr); }
+      .pillars-card { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ── SIDEBAR ─────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">H</div>
+      <div class="logo-name">HEAT<span>map</span></div>
+      <div class="logo-sub">Houston Ecosystem Analytics</div>
+    </div>
+
+    <div class="sidebar-section-label">Dashboards</div>
+
+    <nav class="sidebar-nav" id="sidebarNav">
+      <button class="nav-item active" data-tab="executive">
+        <span class="nav-dot" style="background:var(--violet)"></span>
+        <span class="nav-label">Executive Summary</span>
+        <span class="nav-score" id="nav-score-exec">--</span>
+      </button>
+      <button class="nav-item" data-tab="startup">
+        <span class="nav-dot" style="background:var(--green)"></span>
+        <span class="nav-label">Startup Activity</span>
+        <span class="nav-score" id="nav-score-startup">--</span>
+      </button>
+      <button class="nav-item" data-tab="growth">
+        <span class="nav-dot" style="background:var(--blue)"></span>
+        <span class="nav-label">Growth Activity</span>
+        <span class="nav-score" id="nav-score-growth">--</span>
+      </button>
+      <button class="nav-item" data-tab="capital">
+        <span class="nav-dot" style="background:var(--amber)"></span>
+        <span class="nav-label">Capital Formation</span>
+        <span class="nav-score" id="nav-score-capital">--</span>
+      </button>
+      <button class="nav-item" data-tab="enablers">
+        <span class="nav-dot" style="background:var(--orange)"></span>
+        <span class="nav-label">Enablers</span>
+        <span class="nav-score" id="nav-score-enablers">--</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="sidebar-badge badge-mock">Mock Data</span><br>
+      <span class="badge-date">Apr 2025 – Mar 2026</span>
+    </div>
+  </aside>
+
+  <!-- ── CONTENT AREA ────────────────────────────────────────────── -->
+  <div class="content-area">
+
+    <div class="content-header" id="contentHeader">
+      <div>
+        <h2 id="headerTitle">Executive Summary</h2>
+        <p id="headerSub">5-minute ecosystem health snapshot for leadership</p>
+      </div>
+      <div class="header-score-chip">
+        <span class="chip-label">Overall Score</span>
+        <span class="chip-value" id="chipScore">--</span>
+      </div>
+    </div>
+
+    <main>
+
+      <!-- ══════════════════════════════════════════════════════════
+           EXECUTIVE SUMMARY
+      ══════════════════════════════════════════════════════════════ -->
+      <section id="panel-executive" class="panel active">
+
+        <div class="section-title">Ecosystem at a Glance</div>
+
+        <div class="exec-hero">
+          <!-- Score card -->
+          <div class="score-card">
+            <div class="gauge-wrap">
+              <canvas id="gaugeChart" width="160" height="98"></canvas>
+              <div class="gauge-num-overlay">
+                <div class="score-num" id="scoreDisplay">--</div>
+              </div>
+            </div>
+            <div class="score-lbl">Ecosystem Health Score</div>
+            <div class="score-delta">+12 pts since Apr 2025</div>
+            <div class="score-caption">/ 100 weighted composite</div>
+          </div>
+
+          <!-- Pillar bars -->
+          <div class="pillars-card" id="pillarGrid"></div>
+        </div>
+
+        <div class="section-title">Pillar Highlights</div>
+        <div class="kpi-row kpi-row-4">
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--green),transparent)">
+            <div class="kpi-label">Companies Formed YTD</div>
+            <div class="kpi-value c-green" id="exec-companies">--</div>
+            <div class="kpi-sub">target: 500</div>
+            <span class="kpi-trend up">+18% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--amber),transparent)">
+            <div class="kpi-label">Capital Deployed YTD</div>
+            <div class="kpi-value c-amber" id="exec-capital">--</div>
+            <div class="kpi-sub">target: $1.8B</div>
+            <span class="kpi-trend up">+22% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--blue),transparent)">
+            <div class="kpi-label">Active Investors</div>
+            <div class="kpi-value c-blue" id="exec-investors">--</div>
+            <div class="kpi-sub">target: 380</div>
+            <span class="kpi-trend up">+10% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--purple),transparent)">
+            <div class="kpi-label">Headcount Hired YTD</div>
+            <div class="kpi-value c-violet" id="exec-headcount">--</div>
+            <div class="kpi-sub">target: 2,400</div>
+            <span class="kpi-trend up">+14% vs prior year</span>
+          </div>
+        </div>
+
+        <div class="section-title">12-Month Score Trend</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Ecosystem Health Score</div>
+          <div class="chart-card-sub">Monthly composite — all four pillars weighted equally (25% each)</div>
+          <div class="chart-wrap" style="height:210px">
+            <canvas id="scoreTrendChart"></canvas>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:20px">Pillar Score Comparison</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Score by Pillar</div>
+          <div class="chart-card-sub">Weighted composite 0–100 per pillar</div>
+          <div class="chart-wrap" style="height:170px">
+            <canvas id="pillarBarChart"></canvas>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           STARTUP ACTIVITY
+      ══════════════════════════════════════════════════════════════ -->
+      <section id="panel-startup" class="panel">
+
+        <div class="section-title">Overview</div>
+        <div class="kpi-row kpi-row-3">
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--green),transparent)">
+            <div class="kpi-label">Companies Formed YTD</div>
+            <div class="kpi-value c-green" id="sa-companies">--</div>
+            <div class="kpi-sub">target: 500 &nbsp;·&nbsp; weight: 40%</div>
+            <span class="kpi-trend up">+18% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--blue),transparent)">
+            <div class="kpi-label">Serial Founders (latest mo.)</div>
+            <div class="kpi-value c-blue" id="sa-serial">--%</div>
+            <div class="kpi-sub">target: 45% &nbsp;·&nbsp; weight: 30%</div>
+            <span class="kpi-trend up">+7 pts vs Apr 2025</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--violet),transparent)">
+            <div class="kpi-label">Univ. IP Conversions YTD</div>
+            <div class="kpi-value c-violet" id="sa-ip">--</div>
+            <div class="kpi-sub">target: 80 &nbsp;·&nbsp; weight: 30%</div>
+            <span class="kpi-trend up">+6% vs prior year</span>
+          </div>
+        </div>
+
+        <div class="section-title">Company Formation by Sector</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Monthly New Companies — by Sector</div>
+          <div class="chart-card-sub">Software/SaaS · Cleantech · Biotech/Health · Hardware · Other</div>
+          <div class="chart-wrap" style="height:250px">
+            <canvas id="sectorStackChart"></canvas>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:20px">Programs & Founder Profile</div>
+        <div class="charts-row c2">
+          <div class="chart-card">
+            <div class="chart-card-title">Program Leaderboard</div>
+            <div class="chart-card-sub">Companies formed YTD by accelerator / source</div>
+            <div class="chart-wrap" style="height:210px">
+              <canvas id="programChart"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">Founder Experience Mix</div>
+            <div class="chart-card-sub">Serial vs. experienced vs. first-time</div>
+            <div class="chart-wrap" style="height:210px">
+              <canvas id="founderChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           GROWTH ACTIVITY
+      ══════════════════════════════════════════════════════════════ -->
+      <section id="panel-growth" class="panel">
+
+        <div class="section-title">Overview</div>
+        <div class="kpi-row kpi-row-3">
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--violet),transparent)">
+            <div class="kpi-label">Headcount Hired YTD</div>
+            <div class="kpi-value c-violet" id="ga-headcount">--</div>
+            <div class="kpi-sub">target: 2,400 &nbsp;·&nbsp; weight: 35%</div>
+            <span class="kpi-trend up">+14% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--green),transparent)">
+            <div class="kpi-label">Funding Raised YTD</div>
+            <div class="kpi-value c-green" id="ga-funding">--</div>
+            <div class="kpi-sub">target: $2.0B &nbsp;·&nbsp; weight: 40%</div>
+            <span class="kpi-trend up">+28% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--blue),transparent)">
+            <div class="kpi-label">Corporate Partnerships YTD</div>
+            <div class="kpi-value c-blue" id="ga-partnerships">--</div>
+            <div class="kpi-sub">target: 200 &nbsp;·&nbsp; weight: 25%</div>
+            <span class="kpi-trend up">+19% vs prior year</span>
+          </div>
+        </div>
+
+        <div class="section-title">Monthly Trends</div>
+        <div class="charts-row c2">
+          <div class="chart-card">
+            <div class="chart-card-title">Monthly Headcount Hired</div>
+            <div class="chart-card-sub">New hires per month across tracked companies</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="headcountChart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">Corporate Partnerships</div>
+            <div class="chart-card-sub">New Houston corporate-startup pilots signed per month</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="partnershipChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="section-title">Funding by Round</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Monthly Funding ($M) — by Round</div>
+          <div class="chart-card-sub">Seed · Series A · Series B · Series C+ stacked</div>
+          <div class="chart-wrap" style="height:230px"><canvas id="fundingRoundChart"></canvas></div>
+        </div>
+
+        <div class="section-title" style="margin-top:20px">Top Companies</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Fastest-Growing Startups</div>
+          <div class="chart-card-sub">Ranked by headcount growth this period</div>
+          <table class="ldr-table" id="topCompaniesTable">
+            <thead><tr><th>Company</th><th>Headcount</th><th>Funding ($M)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           CAPITAL FORMATION
+      ══════════════════════════════════════════════════════════════ -->
+      <section id="panel-capital" class="panel">
+
+        <div class="section-title">Overview</div>
+        <div class="kpi-row kpi-row-3">
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--green),transparent)">
+            <div class="kpi-label">Capital Deployed YTD</div>
+            <div class="kpi-value c-green" id="cf-capital">--</div>
+            <div class="kpi-sub">target: $1.8B &nbsp;·&nbsp; weight: 40%</div>
+            <span class="kpi-trend up">+22% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--blue),transparent)">
+            <div class="kpi-label">Active Investors</div>
+            <div class="kpi-value c-blue" id="cf-investors">--</div>
+            <div class="kpi-sub">target: 380 &nbsp;·&nbsp; weight: 35%</div>
+            <span class="kpi-trend up">+10% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--amber),transparent)">
+            <div class="kpi-label">Avg. Check Size</div>
+            <div class="kpi-value c-amber" id="cf-check">--</div>
+            <div class="kpi-sub">estimated across all deal types</div>
+            <span class="kpi-trend up">+8% vs prior year</span>
+          </div>
+        </div>
+
+        <div class="section-title">Monthly Capital Deployed</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Capital Deployed per Month ($M)</div>
+          <div class="chart-card-sub">Total across VC · Angel · PE · Corporate · Other</div>
+          <div class="chart-wrap" style="height:210px"><canvas id="capitalMonthlyChart"></canvas></div>
+        </div>
+
+        <div class="section-title" style="margin-top:20px">Capital Breakdown</div>
+        <div class="charts-row c2">
+          <div class="chart-card">
+            <div class="chart-card-title">By Investor Type</div>
+            <div class="chart-card-sub">VC · Angel · PE · Corporate · Other</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="investorTypeChart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">By Geographic Origin</div>
+            <div class="chart-card-sub">Houston · Texas · National · International</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="originChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:20px">Houston-Based Funds</div>
+        <div class="chart-card">
+          <div class="chart-card-title">Active Houston Funds</div>
+          <div class="chart-card-sub">Local funds and capital deployed YTD</div>
+          <div class="fund-list" id="fundList"></div>
+        </div>
+
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           ENABLERS
+      ══════════════════════════════════════════════════════════════ -->
+      <section id="panel-enablers" class="panel">
+
+        <div class="section-title">Overview</div>
+        <div class="kpi-row kpi-row-3">
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--orange),transparent)">
+            <div class="kpi-label">STEM Grads YTD</div>
+            <div class="kpi-value c-orange" id="en-grads">--</div>
+            <div class="kpi-sub">target: 800 &nbsp;·&nbsp; weight: 35%</div>
+            <span class="kpi-trend up">+12% vs prior year</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--blue),transparent)">
+            <div class="kpi-label">Avg Service Engagement</div>
+            <div class="kpi-value c-blue" id="en-service">--%</div>
+            <div class="kpi-sub">target: 80% &nbsp;·&nbsp; weight: 25%</div>
+            <span class="kpi-trend up">+6 pts vs Apr 2025</span>
+          </div>
+          <div class="kpi-card" style="--top-line:linear-gradient(90deg,var(--green),transparent)">
+            <div class="kpi-label">Founder Reinvestment Rate</div>
+            <div class="kpi-value c-green" id="en-reinvest">--%</div>
+            <div class="kpi-sub">target: 40% &nbsp;·&nbsp; weight: 20%</div>
+            <span class="kpi-trend up">+10 pts vs Apr 2025</span>
+          </div>
+        </div>
+
+        <div class="section-title">Talent & Service</div>
+        <div class="charts-row c12">
+          <div class="chart-card">
+            <div class="chart-card-title">Service Engagement</div>
+            <div class="chart-card-sub">% of tracked startups using each service</div>
+            <div class="progress-list" id="serviceList" style="margin-top:8px"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">Monthly STEM Graduates</div>
+            <div class="chart-card-sub">Engineering · CS · Life Sciences grads entering ecosystem</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="stemChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:20px">Culture & Reinvestment</div>
+        <div class="charts-row c2">
+          <div class="chart-card">
+            <div class="chart-card-title">Ecosystem Sentiment Score</div>
+            <div class="chart-card-sub">Founder confidence · risk tolerance · failure acceptance</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="sentimentChart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">Founder Reinvestment Rate</div>
+            <div class="chart-card-sub">% of exited founders deploying back into ecosystem</div>
+            <div class="chart-wrap" style="height:210px"><canvas id="reinvestChart"></canvas></div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div><!-- /content-area -->
+</div><!-- /app-shell -->
+
+<!-- ── SCRIPTS ────────────────────────────────────────────────────── -->
+<script>
+  const DATA = {{ data|safe }};
+
+  // ── CHART DEFAULTS ──────────────────────────────────────────────
+  Chart.defaults.color           = '#5a6a82';
+  Chart.defaults.borderColor     = 'rgba(255,255,255,0.07)';
+  Chart.defaults.font.family     = "'Segoe UI', system-ui, sans-serif";
+  Chart.defaults.font.size       = 11;
+  Chart.defaults.plugins.legend.labels.boxWidth  = 9;
+  Chart.defaults.plugins.legend.labels.padding   = 16;
+  Chart.defaults.plugins.legend.labels.color     = '#5a6a82';
+  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(8,8,15,0.96)';
+  Chart.defaults.plugins.tooltip.borderColor     = 'rgba(56,77,156,0.5)';
+  Chart.defaults.plugins.tooltip.borderWidth     = 1;
+  Chart.defaults.plugins.tooltip.padding         = 12;
+  Chart.defaults.plugins.tooltip.titleColor      = '#f1f5f9';
+  Chart.defaults.plugins.tooltip.bodyColor       = '#5a6a82';
+  Chart.defaults.plugins.tooltip.cornerRadius    = 10;
+
+  // City of Houston official color palette
+  const C = {
+    yellow:  '#FBD028',  // Houston flag yellow   — primary hero/highlight
+    blue:    '#5B75C8',  // Houston blue (lit)    — primary UI accent
+    hblue:   '#384D9C',  // Houston flag blue     — deeper elements
+    subblue: '#6670D4',  // Houston sub-blue      — tertiary accent
+    magenta: '#B84880',  // Houston magenta       — quaternary accent
+    gold:    '#C8882A',  // Houston gold          — warm accent
+    red:     '#CC2000',  // Houston red           — alerts / attention
+    green:   '#34d399',  // semantic green        — positive growth
+    slate:   '#475569',  // neutral slate         — "Other" categories
+  };
+
+  const axis = {
+    grid:  { color: 'rgba(255,255,255,0.06)', drawBorder: false },
+    ticks: { color: '#5a6a82', maxTicksLimit: 6 },
+    border: { display: false },
+  };
+
+  function lds(label, color, data) {
+    return {
+      label, data, borderColor: color, backgroundColor: color + '15',
+      borderWidth: 2.5, pointRadius: 3, pointHoverRadius: 6,
+      pointBackgroundColor: color, fill: true, tension: 0.38,
+    };
+  }
+  function bds(label, color, data) {
+    return {
+      label, data, backgroundColor: color + 'b0',
+      hoverBackgroundColor: color, borderRadius: 5, borderSkipped: false,
+    };
+  }
+  function dds(data, colors) {
+    return { data, backgroundColor: colors.map(c => c + 'cc'), borderWidth: 0, hoverOffset: 8 };
+  }
+
+  // ── HEADER MAP ──────────────────────────────────────────────────
+  const HEADERS = {
+    executive: ['Executive Summary',       '5-minute ecosystem health snapshot for leadership'],
+    startup:   ['Startup Activity',         'Company formation trends by sector, program, and founder quality'],
+    growth:    ['Growth Activity',           'Hiring, funding rounds, and corporate partnership activity'],
+    capital:   ['Capital Formation',         'Capital deployment, investor activity, and fund health'],
+    enablers:  ['Enablers',                  'Talent pipeline, service providers, reinvestment, and sentiment'],
+  };
+
+  // ── TAB SWITCHING ────────────────────────────────────────────────
+  const initialized = {};
+
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const id = btn.dataset.tab;
+      document.getElementById('panel-' + id).classList.add('active');
+      const [title, sub] = HEADERS[id];
+      document.getElementById('headerTitle').textContent = title;
+      document.getElementById('headerSub').textContent   = sub;
+      if (!initialized[id]) { initialized[id] = true; initDash(id); }
+    });
+  });
+
+  function initDash(id) {
+    const m = { startup: initStartup, growth: initGrowth, capital: initCapital, enablers: initEnablers };
+    if (m[id]) m[id]();
+  }
+
+  function statusInfo(s) {
+    if (s >= 85) return ['Good',    'tag-good',  C.green];
+    if (s >= 70) return ['Fair',    'tag-fair',  C.amber];
+    return               ['Monitor','tag-low',   C.red];
+  }
+
+  // ── EXECUTIVE ───────────────────────────────────────────────────
+  (function initExec() {
+    const d = DATA, sc = d.scores;
+
+    // Sidebar scores
+    document.getElementById('nav-score-exec').textContent    = d.overall_score;
+    document.getElementById('nav-score-startup').textContent = sc.startup;
+    document.getElementById('nav-score-growth').textContent  = sc.growth;
+    document.getElementById('nav-score-capital').textContent = sc.capital;
+    document.getElementById('nav-score-enablers').textContent= sc.enablers;
+
+    // Header chip
+    document.getElementById('chipScore').textContent   = d.overall_score;
+    document.getElementById('scoreDisplay').textContent = d.overall_score;
+
+    // KPI fill
+    document.getElementById('exec-companies').textContent = d.startup.ytd_companies.toLocaleString();
+    document.getElementById('exec-capital').textContent   = '$' + (d.capital.ytd_capital_m / 1000).toFixed(2) + 'B';
+    document.getElementById('exec-investors').textContent = d.capital.latest_investors.toLocaleString();
+    document.getElementById('exec-headcount').textContent = d.growth.ytd_headcount.toLocaleString();
+
+    // Gauge
+    new Chart(document.getElementById('gaugeChart'), {
+      type: 'doughnut',
+      data: { datasets: [{
+        data: [d.overall_score, 100 - d.overall_score],
+        backgroundColor: ['#FBD028', 'rgba(56,77,156,0.18)'],
+        borderWidth: 0, circumference: 180, rotation: 270,
+      }]},
+      options: {
+        responsive: false, cutout: '74%',
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        animation: { duration: 900, easing: 'easeOutQuart' },
+      }
+    });
+
+    // Pillar rows
+    const grid = document.getElementById('pillarGrid');
+    [
+      { name: 'Startup Activity',  score: sc.startup  },
+      { name: 'Growth Activity',   score: sc.growth   },
+      { name: 'Capital Formation', score: sc.capital  },
+      { name: 'Enablers',          score: sc.enablers },
+    ].forEach(p => {
+      const [lbl, cls, col] = statusInfo(p.score);
+      const row = document.createElement('div');
+      row.className = 'pillar-row';
+      row.innerHTML = `
+        <span class="pillar-name">${p.name}</span>
+        <div class="pillar-track">
+          <div class="pillar-fill" style="width:${p.score}%;background:linear-gradient(90deg,${col},${col}55)"></div>
+        </div>
+        <span class="pillar-num" style="color:${col}">${p.score}</span>
+        <span class="pillar-tag ${cls}">${lbl}</span>
+      `;
+      grid.appendChild(row);
+    });
+
+    // Score trend
+    new Chart(document.getElementById('scoreTrendChart'), {
+      type: 'line',
+      data: { labels: d.months, datasets: [lds('Ecosystem Score', C.yellow, d.score_trend)] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: axis, y: { ...axis, min: 60, max: 100, ticks: { ...axis.ticks, stepSize: 10 } } },
+        plugins: { legend: { display: false } },
+      }
+    });
+
+    // Pillar bar
+    new Chart(document.getElementById('pillarBarChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Startup Activity', 'Growth Activity', 'Capital Formation', 'Enablers'],
+        datasets: [{
+          data: [sc.startup, sc.growth, sc.capital, sc.enablers],
+          backgroundColor: [C.green + 'b0', C.blue + 'b0', C.yellow + 'b0', C.magenta + 'b0'],
+          hoverBackgroundColor: [C.green, C.blue, C.yellow, C.magenta],
+          borderRadius: 6, borderSkipped: false,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: { ...axis, min: 0, max: 100 }, y: axis },
+        plugins: { legend: { display: false } },
+      }
+    });
+
+    initialized['executive'] = true;
+  })();
+
+  // ── STARTUP ─────────────────────────────────────────────────────
+  function initStartup() {
+    const s = DATA.startup;
+    document.getElementById('sa-companies').textContent = s.ytd_companies.toLocaleString();
+    document.getElementById('sa-serial').textContent    = s.latest_serial_pct + '%';
+    document.getElementById('sa-ip').textContent        = s.ytd_ip;
+
+    new Chart(document.getElementById('sectorStackChart'), {
+      type: 'bar',
+      data: {
+        labels: DATA.months,
+        datasets: [
+          bds('Software/SaaS',  C.blue,    s.sectors.software),
+          bds('Cleantech',      C.green,   s.sectors.cleantech),
+          bds('Biotech/Health', C.magenta, s.sectors.biotech),
+          bds('Hardware',       C.yellow,  s.sectors.hardware),
+          bds('Other',          C.slate,   s.sectors.other),
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { ...axis, stacked: true }, y: { ...axis, stacked: true } },
+        plugins: { legend: { position: 'bottom' } },
+      }
+    });
+
+    new Chart(document.getElementById('programChart'), {
+      type: 'bar',
+      data: {
+        labels: s.programs.map(p => p.name),
+        datasets: [{
+          data: s.programs.map(p => p.count),
+          backgroundColor: [C.hblue, C.green, C.blue, C.gold, C.yellow].map(c => c + 'b0'),
+          hoverBackgroundColor: [C.hblue, C.green, C.blue, C.gold, C.yellow],
+          borderRadius: 5, borderSkipped: false,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        scales: { x: axis, y: axis }, plugins: { legend: { display: false } },
+      }
+    });
+
+    new Chart(document.getElementById('founderChart'), {
+      type: 'doughnut',
+      data: {
+        labels: s.founder_exp.map(f => f.label),
+        datasets: [dds(s.founder_exp.map(f => f.pct), [C.hblue, C.blue, C.slate])]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '56%',
+        plugins: { legend: { position: 'bottom' } },
+      }
+    });
+  }
+
+  // ── GROWTH ──────────────────────────────────────────────────────
+  function initGrowth() {
+    const g = DATA.growth;
+    document.getElementById('ga-headcount').textContent    = g.ytd_headcount.toLocaleString();
+    document.getElementById('ga-funding').textContent      = '$' + (g.ytd_funding_m / 1000).toFixed(2) + 'B';
+    document.getElementById('ga-partnerships').textContent = g.ytd_partnerships;
+
+    new Chart(document.getElementById('headcountChart'), {
+      type: 'line',
+      data: { labels: DATA.months, datasets: [lds('New Hires / Month', C.subblue, g.headcount)] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: axis, y: axis }, plugins: { legend: { display: false } } }
+    });
+    new Chart(document.getElementById('partnershipChart'), {
+      type: 'line',
+      data: { labels: DATA.months, datasets: [lds('Partnerships / Month', C.blue, g.partnerships)] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: axis, y: { ...axis, min: 0 } }, plugins: { legend: { display: false } } }
+    });
+    new Chart(document.getElementById('fundingRoundChart'), {
+      type: 'bar',
+      data: {
+        labels: DATA.months,
+        datasets: [
+          bds('Series C+', C.hblue,   g.funding.series_c),
+          bds('Series B',  C.blue,    g.funding.series_b),
+          bds('Series A',  C.green,   g.funding.series_a),
+          bds('Seed',      C.yellow,  g.funding.seed),
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { ...axis, stacked: true }, y: { ...axis, stacked: true } },
+        plugins: { legend: { position: 'bottom' } },
+      }
+    });
+
+    const tb = document.querySelector('#topCompaniesTable tbody');
+    g.top_companies.forEach((co, i) => {
+      tb.innerHTML += `<tr>
+        <td><span class="ldr-rank">#${i+1}</span>${co.name}
+            <span class="s-tag s-${co.sector.toLowerCase()}">${co.sector}</span></td>
+        <td>${co.headcount.toLocaleString()}</td>
+        <td>$${co.funding_m}M</td>
+      </tr>`;
+    });
+  }
+
+  // ── CAPITAL ─────────────────────────────────────────────────────
+  function initCapital() {
+    const c = DATA.capital;
+    document.getElementById('cf-capital').textContent   = '$' + (c.ytd_capital_m / 1000).toFixed(2) + 'B';
+    document.getElementById('cf-investors').textContent = c.latest_investors.toLocaleString();
+    document.getElementById('cf-check').textContent     = '$' + c.avg_check_m + 'M';
+
+    new Chart(document.getElementById('capitalMonthlyChart'), {
+      type: 'bar',
+      data: { labels: DATA.months, datasets: [bds('Capital ($M)', C.green, c.monthly)] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: axis, y: axis }, plugins: { legend: { display: false } } }
+    });
+    new Chart(document.getElementById('investorTypeChart'), {
+      type: 'doughnut',
+      data: { labels: c.investor_types.map(t => t.label), datasets: [dds(c.investor_types.map(t => t.pct), [C.blue, C.green, C.subblue, C.yellow, C.slate])] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '56%', plugins: { legend: { position: 'bottom' } } }
+    });
+    new Chart(document.getElementById('originChart'), {
+      type: 'doughnut',
+      data: { labels: c.origin.map(o => o.label), datasets: [dds(c.origin.map(o => o.pct), [C.hblue, C.yellow, C.green, C.subblue])] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '56%', plugins: { legend: { position: 'bottom' } } }
+    });
+
+    const fl = document.getElementById('fundList');
+    c.houston_funds.forEach(f => {
+      fl.innerHTML += `<div class="fund-row"><div><div class="fund-name">${f.name}</div><div class="fund-focus">${f.focus}</div></div><div class="fund-amt">$${f.deployed_m}M</div></div>`;
+    });
+  }
+
+  // ── ENABLERS ────────────────────────────────────────────────────
+  function initEnablers() {
+    const e = DATA.enablers;
+    document.getElementById('en-grads').textContent    = e.ytd_grads.toLocaleString();
+    document.getElementById('en-service').textContent  = e.avg_service_pct + '%';
+    document.getElementById('en-reinvest').textContent = e.latest_reinvest + '%';
+
+    const sl = document.getElementById('serviceList');
+    e.service_breakdown.forEach(s => {
+      sl.innerHTML += `<div><div class="prog-header"><span class="prog-name">${s.label}</span><span class="prog-val">${s.pct}%</span></div><div class="prog-track"><div class="prog-fill" style="width:${s.pct}%"></div></div></div>`;
+    });
+
+    new Chart(document.getElementById('stemChart'), {
+      type: 'bar',
+      data: { labels: DATA.months, datasets: [bds('STEM Graduates', C.orange, e.stem_grads)] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: axis, y: { ...axis, min: 0 } }, plugins: { legend: { display: false } } }
+    });
+    new Chart(document.getElementById('sentimentChart'), {
+      type: 'line',
+      data: { labels: DATA.months, datasets: [lds('Sentiment Score', C.blue, e.sentiment)] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: axis, y: { ...axis, min: 60, max: 100 } }, plugins: { legend: { display: false } } }
+    });
+    new Chart(document.getElementById('reinvestChart'), {
+      type: 'line',
+      data: { labels: DATA.months, datasets: [lds('Reinvestment Rate (%)', C.yellow, e.reinvest)] },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: axis, y: { ...axis, min: 0, max: 50 } }, plugins: { legend: { display: false } } }
+    });
+  }
+</script>
+</body>
+</html>

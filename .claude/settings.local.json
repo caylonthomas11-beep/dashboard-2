@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:claude.ai)",
+      "WebFetch(domain:muz.li)",
+      "WebFetch(domain:fuselabcreative.com)",
+      "WebFetch(domain:uitop.design)",
+      "mcp__Claude_Preview__preview_start",
+      "WebSearch",
+      "WebFetch(domain:www.houstontx.gov)",
+      "WebFetch(domain:www.flagcolorcodes.com)"
+    ]
+  }
+}

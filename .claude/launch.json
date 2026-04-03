@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "heatmap-v2",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py"],
+      "port": 5001
+    }
+  ]
+}
